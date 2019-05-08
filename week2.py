@@ -5,7 +5,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 from imblearn.over_sampling import SMOTE
 from collections import Counter
 
@@ -17,8 +17,8 @@ from sklearn.svm import SVC
 
 from sklearn.model_selection import cross_val_score, cross_val_predict, cross_validate
 
-from sklearn.metrics import roc_curve, auc, precision_recall_curve, confusion_matrix
-
+from sklearn.metrics import roc_curve, auc, precision_recall_curve, confusion_matrix, accuracy_score, recall_score, precision_score
+import seaborn as sn
 
 
 IN_FILE = '/home/wouter/Downloads/data_for_student_case.csv(1)/data_for_student_case.csv'
@@ -47,29 +47,60 @@ def plot_PRcurve(recall, precision):
     plt.grid(True)
     plt.show()
 
+# def feature_importance(importances):
+#     std = np.std([tree.feature_importances_ for tree in forest.estimators_],
+#              axis=0)
+#     indices = np.argsort(importances)[::-1]
+
+#     # Print the feature ranking
+#     print("Feature ranking:")
+
+#     for f in range(X.shape[1]):
+#         print("%d. feature %d (%f)" % (f + 1, indices[f], importances[indices[f]]))
+
+#     # Plot the feature importances of the forest
+#     plt.figure()
+#     plt.title("Feature importances")
+#     plt.bar(range(X.shape[1]), importances[indices],
+#            color="r", yerr=std[indices], align="center")
+#     plt.xticks(range(X.shape[1]), indices)
+#     plt.xlim([-1, X.shape[1]])
+#     plt.show()
+    
 
 
-def eval_classifier(clf):
+def eval_classifier(clf, kFoldEval = False):
+
     clf.fit(X_train, y_train)
-    # predictions = clf.predict(X_test)
-    y_scores = clf.predict_proba(X_test)
-    predictions = y_scores[:,1]
+    predictions = clf.predict(X_test)
+    # y_scores = clf.predict_proba(X_test)
+    # predictions = y_scores[:,1]
     # predictions = cross_val_predict(clf, X_test, y_test, cv=10)
 
-    # ROC
-    fpr, tpr, _ = roc_curve(y_test, predictions)
-    plot_roc(fpr, tpr)
+    if not kFoldEval:
+        # ROC
+        fpr, tpr, _ = roc_curve(y_test, predictions)
+        plot_roc(fpr, tpr)
 
-    # PR
-    precision, recall, _ = precision_recall_curve(y_test, predictions)
-    plot_PRcurve(recall, precision)
+        # PR
+        precision, recall, _ = precision_recall_curve(y_test, predictions)
+        plot_PRcurve(recall, precision)
 
-    # Confusion Matrix
+        # Confusion Matrix
+        print("TN", "FP")
+        print("FN", "TP")
+        confmat = confusion_matrix(y_test, predictions.astype(int))
+        print(pd.DataFrame(confmat))
 
-    print("TN", "FP")
-    print("FN", "TP")
 
-    print(pd.DataFrame(confusion_matrix(y_test, predictions.astype(int))))
+        measures = {'Accuracy': accuracy_score,
+                    'Precision': precision_score,
+                    'Recall': recall_score}
+
+        for name in measures:
+            print(name, measures[name](y_test, predictions.astype(int)))
+
+    return confmat.ravel()
 
 # In[ ]:
 data = pd.read_csv(IN_FILE)
@@ -99,7 +130,7 @@ features['card_id'] = pd.factorize(data['card_id'])[0]
 
 # In[ ]:
 # Split in test/train sets
-X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.2)
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.4)
 print("Legit/Fraud", Counter(labels))
 
 # In[]
@@ -112,8 +143,9 @@ print("Legit/Fraud", Counter(y_train))
 
 # In[]:
 #KNN Classifier
-print('KNN')
-clf = KNeighborsClassifier()
+neighbors = 20
+print('KNN', neighbors)
+clf = KNeighborsClassifier(n_neighbors=neighbors)
 eval_classifier(clf)
 
 # In[]:
@@ -122,17 +154,21 @@ print('DecisionTree')
 clf = DecisionTreeClassifier()
 eval_classifier(clf)
 
+
 # In[]:
 #Random Forrest Classifier
 print('RandomForest')
-clf = RandomForestClassifier(n_estimators=50)
+clf = RandomForestClassifier(n_estimators=2)
 eval_classifier(clf)
+print(clf.feature_importances_)
+
 
 # In[]:
 #AdaBoost Classifier
 print('AdaBoost')
 clf = AdaBoostClassifier()
 eval_classifier(clf)
+
 
 # # In[]:
 # #SVM
@@ -146,5 +182,35 @@ eval_classifier(clf)
 # eval_classifier(clf)
 
 
+# In[]:
+
+skf = StratifiedKFold(n_splits=10)
+print(features.shape, labels.shape)
+totalTN, totalFP, totalFN, totalTP = 0,0, 0,0
+for train_index, test_index in skf.split(features, labels):
+    X_train, X_test = features.loc[train_index], features.loc[test_index]
+    y_train, y_test = labels[train_index], labels[test_index]
+    
+    clf = RandomForestClassifier(n_estimators=20)
+    clf.fit(X_train, y_train)
+    # predictions = clf.predict(X_test)
+    # y_scores = clf.predict_proba(X_test)
+    # predictions = y_scores[:,1]
+    predictions = cross_val_predict(clf, X_test, y_test, cv=10)
+    tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
+    print(tn, fp)
+    print(fn, tp, end='\n\n')
+    totalTN += tn
+    totalFP += fp
+    totalFN += fn
+    totalTP += tp
+
+print("totals")
+print(totalTN, totalFP)
+print(totalFN, totalTP)
+
+
+    
+    
 
 #%%
