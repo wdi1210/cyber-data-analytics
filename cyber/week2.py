@@ -69,38 +69,29 @@ def plot_PRcurve(recall, precision):
     
 
 
-def eval_classifier(clf, kFoldEval = False):
-
+def eval_classifier(clf):
     clf.fit(X_train, y_train)
     predictions = clf.predict(X_test)
-    # y_scores = clf.predict_proba(X_test)
-    # predictions = y_scores[:,1]
-    # predictions = cross_val_predict(clf, X_test, y_test, cv=10)
 
-    if not kFoldEval:
-        # ROC
-        fpr, tpr, _ = roc_curve(y_test, predictions)
-        plot_roc(fpr, tpr)
+    # ROC
+    fpr, tpr, _ = roc_curve(y_test, predictions)
+    plot_roc(fpr, tpr)
+    
+    # PR
+    precision, recall, _ = precision_recall_curve(y_test, predictions)
+    plot_PRcurve(recall, precision)
+    
+    # Confusion Matrix
+    print("TN", "FP")
+    print("FN", "TP")
+    confmat = confusion_matrix(y_test, predictions.astype(int))
+    print(pd.DataFrame(confmat))
+    measures = {'Accuracy': accuracy_score,
+                'Precision': precision_score,
+                'Recall': recall_score}
+    for name in measures:
+        print(name, measures[name](y_test, predictions.astype(int)))
 
-        # PR
-        precision, recall, _ = precision_recall_curve(y_test, predictions)
-        plot_PRcurve(recall, precision)
-
-        # Confusion Matrix
-        print("TN", "FP")
-        print("FN", "TP")
-        confmat = confusion_matrix(y_test, predictions.astype(int))
-        print(pd.DataFrame(confmat))
-
-
-        measures = {'Accuracy': accuracy_score,
-                    'Precision': precision_score,
-                    'Recall': recall_score}
-
-        for name in measures:
-            print(name, measures[name](y_test, predictions.astype(int)))
-
-    return confmat.ravel()
 
 # In[ ]:
 data = pd.read_csv(IN_FILE)
@@ -110,6 +101,7 @@ features = pd.DataFrame()
 
 # Truth label- 1 = fraud, 0 = valid
 labels = data['simple_journal'].apply(lambda x : 1 if int(x == 'Chargeback') else 0)
+print(sum(labels))
 # labels = data['simple_journal'].apply(lambda x : 'fraud' if int(x == 'Chargeback') else 'valid')
 
 
@@ -150,9 +142,25 @@ eval_classifier(clf)
 
 # In[]:
 #DecisionTree Classifier
+print(features.columns)
+
+from io import StringIO
+from IPython.display import Image
+from sklearn import tree
+
+import pydotplus
+
 print('DecisionTree')
 clf = DecisionTreeClassifier()
 eval_classifier(clf)
+
+out = StringIO()
+tree.export_graphviz(clf, out_file = out, feature_names=features.columns)
+graph = pydotplus.graph_from_dot_data(out.getvalue())
+png = graph.create_png()
+Image(png)
+graph.write_png("decisiontree.png")
+
 
 
 # In[]:
@@ -183,34 +191,79 @@ eval_classifier(clf)
 
 
 # In[]:
-
-skf = StratifiedKFold(n_splits=10)
-print(features.shape, labels.shape)
-totalTN, totalFP, totalFN, totalTP = 0,0, 0,0
+#Split data while preserving the imbanlanced class over the splits
+skf = StratifiedKFold(n_splits=10, shuffle=True)
+split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
 for train_index, test_index in skf.split(features, labels):
-    X_train, X_test = features.loc[train_index], features.loc[test_index]
+    split += 1
+    #Select the data for this round
+    X_train, X_test = features.loc[train_index], features.loc[test_index]    
     y_train, y_test = labels[train_index], labels[test_index]
     
-    clf = RandomForestClassifier(n_estimators=20)
+    #Use SMOTE on training data to get balanced data
+    # sm = SMOTE(random_state=42)
+    # X_train, y_train = sm.fit_resample(X_train, y_train)
+
+    # Train classifier and predict
+    # clf = AdaBoostClassifier()
+    clf = DecisionTreeClassifier()
+    # clf = RandomForestClassifier(n_estimators=20)
+
     clf.fit(X_train, y_train)
-    # predictions = clf.predict(X_test)
-    # y_scores = clf.predict_proba(X_test)
-    # predictions = y_scores[:,1]
-    predictions = cross_val_predict(clf, X_test, y_test, cv=10)
+    predictions = clf.predict(X_test)
+
+    #Sum the confusion matrix values
     tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
-    print(tn, fp)
-    print(fn, tp, end='\n\n')
+    print('Split {}/10: \ntn {}\t fp {}\nfn {}\t\t tp {}'.format(split, tn, fp, fn, tp))
     totalTN += tn
     totalFP += fp
     totalFN += fn
     totalTP += tp
 
-print("totals")
-print(totalTN, totalFP)
-print(totalFN, totalTP)
+print("--- Total sum confmat ---")
+print('tn {}\t fp {}\nfn {}\t\t tp {}'.format(totalTN, totalFP, totalFN, totalTP))
+
+accuracy = (totalTP + totalTN) / (totalTP + totalTN + totalFN + totalFP)
+precision = totalTP / (totalTP + totalFP)
+recall = totalTP / (totalTP + totalFN)
+
+print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, recall))
 
 
+# In[]:
+#Split data while preserving the imbanlanced class over the splits
+skf = StratifiedKFold(n_splits=10, shuffle=True)
+split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
+for train_index, test_index in skf.split(features, labels):
+    split += 1
+    #Select the data for this round
+    X_train, X_test = features.loc[train_index], features.loc[test_index]    
+    y_train, y_test = labels[train_index], labels[test_index]
     
-    
+    #Use SMOTE on training data to get balanced data
+    # sm = SMOTE(random_state=42)
+    # X_train, y_train = sm.fit_resample(X_train, y_train)
 
-#%%
+    # Train classifier and predict
+    clf = RandomForestClassifier(n_estimators=20)
+
+    clf.fit(X_train, y_train)
+    predictions = clf.predict(X_test)
+
+    #Sum the confusion matrix values
+    tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
+    print('Split {}/10: \ntn {}\t fp {}\nfn {}\t\t tp {}'.format(split, tn, fp, fn, tp))
+    totalTN += tn
+    totalFP += fp
+    totalFN += fn
+    totalTP += tp
+
+print("--- Total sum confmat ---")
+print('tn {}\t fp {}\nfn {}\t\t tp {}'.format(totalTN, totalFP, totalFN, totalTP))
+
+accuracy = (totalTP + totalTN) / (totalTP + totalTN + totalFN + totalFP)
+precision = totalTP / (totalTP + totalFP)
+recall = totalTP / (totalTP + totalFN)
+
+print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, recall))
+
