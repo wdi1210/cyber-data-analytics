@@ -152,23 +152,28 @@ sns.distplot(diff.values, hist=False, kde=True,
 # Discretize data
 #################
 # In[]:
-data = data4[['L_T1']]
+dataDisc = data4[['L_T1']]
 
 # data.plot()
 
 # print(np.array(data).ravel())
 
-data['group'] = pd.cut(np.array(data).ravel(), 5, labels=['L', 'l','m', 'h', 'H'])
+dataDisc['group'] = pd.cut(np.array(dataDisc).ravel(), 5, labels=['very low', 'low','medium', 'high', 'very high'])
 
-data['label'] = data4_labels
+dataDisc['label'] = data4_labels
 
-sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='group', data=data.reset_index(), fit_reg=False)
+sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='group', data=dataDisc.reset_index(), fit_reg=False)
 plt.savefig("discretization-group.png")
 
-sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='label', data=data.reset_index(), fit_reg=False)
+sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='label', data=dataDisc.reset_index(), fit_reg=False)
 plt.savefig("discretization-label.png")
 
+# print(''.join(dataDisc['group']))
 
+# from prefixspan import PrefixSpan
+# ps = PrefixSpan(''.join(dataDisc['group']))
+
+# print(ps.frequent(7))
 
 # cut_data.head()
 # time = getDate(data4)
@@ -246,6 +251,33 @@ plt.savefig("pca_distance.png")
 # Comparison
 ##############
 # In[]:
+
+
+# Discretized
+
+print(dataDisc.head())
+
+TP = dataDisc.loc[(dataDisc['label'] == 1) & (dataDisc['group'] == 'very high')]
+FP = dataDisc.loc[(dataDisc['label'] != 1) & (dataDisc['group'] == 'very high')]
+TN = dataDisc.loc[(dataDisc['label'] != 1) & (dataDisc['group'] != 'very high')]
+FN = dataDisc.loc[(dataDisc['label'] == 1) & (dataDisc['group'] != 'very high')]
+
+DiscPrecision = len(TP.index) / ( len(TP.index) + len(FP.index))
+DiscRecall = len(TP.index) / ( len(TP.index) + len(FN.index))
+
+print(DiscPrecision, DiscRecall)
+
+
+# PCA
+TP = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG'] == 1) & (anomalyScoresPCA['anomalyScore'] > 0.2)]
+FP = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= 1) & (anomalyScoresPCA['anomalyScore'] > 0.2)]
+TN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= 1) & (anomalyScoresPCA['anomalyScore'] <= 0.2)]
+FN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= 1) & (anomalyScoresPCA['anomalyScore'] <= 0.2)]
+
+PCAprecision = len(TP.index) / ( len(TP.index) + len(FP.index))
+PCArecall = len(TP.index) / ( len(TP.index) + len(FN.index))
+
+print(PCAprecision, PCArecall)
 
 
 
