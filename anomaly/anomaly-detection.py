@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
-DATAPATH = '~/Documents/Github/cyber-data-analytics/anomaly/data/'
+DATAPATH = 'data/'
 
 dateparse = lambda x: pd.datetime.strptime(x, '%d/%m/%y %H')
 
@@ -19,11 +19,8 @@ data_test = pd.read_csv(DATAPATH +'BATADAL_test_dataset.csv', index_col=0, parse
 data4.columns = data3.columns
 data_test.columns = data3.columns[:len(data3.columns)-1]
 
-
 # for k, v in enumerate(data4.columns):
 #     print("{} - {}".format(k, v))
-
-
 
 # Helper functions
 
@@ -81,13 +78,19 @@ data4.drop(columns=['ATT_FLAG'], inplace=True)
 # In[]:
 from statsmodels.tsa.ar_model import AR
 
-data = data3
+data = data3 = pd.read_csv(DATAPATH +'BATADAL_dataset03.csv')
 
-model = AR(getTankLevel(data3, 1)).fit()
+model = AR(getTankLevel(data, 1)).fit()
+yhat = model.predict(len(data)-30, len(data))
+actual = getTankLevel(data.tail(31), 1)
 
-yhat = model.predict(len(data)-10, len(data))
-print(yhat)
-print(getTankLevel(data.tail(10), 1))
+plt.plot(actual.to_numpy(), label='Actual')
+plt.plot(yhat.to_numpy(), label='Predicted')
+plt.legend()
+plt.show()
+
+#print(yhat.to_numpy())
+#print(actual.to_numpy())
 
 
 ##################
@@ -97,30 +100,33 @@ print(getTankLevel(data.tail(10), 1))
 from statsmodels.tsa.arima_model import ARMA
 from pandas.plotting import autocorrelation_plot
 
-data = data3
+data3 = pd.read_csv(DATAPATH + 'BATADAL_dataset03.csv')
+data4 = pd.read_csv(DATAPATH + 'BATADAL_dataset04.csv')
+data4.columns = data3.columns
+data = data4['L_T1'] # Update accordingly between L_T1 - L_T5
 
-test_train_split = int(len(data) * 0.7)
+test_train_split = int(len(data) * 0.9)
 train, test = data.iloc[0:test_train_split], data.iloc[test_train_split:len(data)]
 
-
 ax = autocorrelation_plot(train)
-ax.set_xlim([0, 100])
-
+ax.set_xlim([0, 35])
 
 ##################
 # Train ARMA model and predict
 #################
 # In[]:
-model = ARMA(train.values, order=(10, 2)).fit()
+# we update order=(p,q) accordingly. q=1 for all.
+# For L_T1: p=10, L_T2: p=6, L_T3 and LT_4: p=4, L_T5: p=3.
+model = ARMA(train.values, order=(100, 1)).fit()
 
-print(model.summary())
+#print(model.summary())
 # plot residual errors
 residuals = pd.DataFrame(model.resid)
 residuals.plot(title="Residuals")
 plt.show()
 residuals.plot(kind='kde', title='Residual Density')
 plt.show()
-print(residuals.describe()) 
+#print(residuals.describe()) 
 
 predictions = model.forecast(steps=len(test))[0]
 
@@ -140,13 +146,21 @@ diff = result['Expected'] - result['Predictions']
 # plt.plot(diff)
 
 sns.distplot(diff.values, hist=False, kde=True, 
-             bins=int(180/5), color = 'blue',
-             hist_kws={'edgecolor':'black'})
+             bins=int(180/5), color = 'lightblue',
+             hist_kws={'edgecolor':'black'}, label='Residual error for L_T1')
 
 # for i in range(1, len(test)):
 #     print('got {} - expected {}'.format(predictions[i], test.values[i]))
 
-
+##################
+# Plotting expected and predicted values from ARMA
+##################
+# In[]:
+print(result)
+plt.plot(result['Expected'], label='Expected')
+plt.plot(result['Predictions'], label='Predicted')
+plt.legend()
+plt.show()
 
 ##################
 # Discretize data
@@ -168,6 +182,7 @@ plt.savefig("discretization-group.png")
 sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='label', data=dataDisc.reset_index(), fit_reg=False)
 plt.savefig("discretization-label.png")
 
+<<<<<<< HEAD
 # print(''.join(dataDisc['group']))
 
 # from prefixspan import PrefixSpan
@@ -175,6 +190,8 @@ plt.savefig("discretization-label.png")
 
 # print(ps.frequent(7))
 
+=======
+>>>>>>> 443209ca29e79883219e8a08c70f9fa6787d8447
 # cut_data.head()
 # time = getDate(data4)
 # plt.bar(data4), data)
