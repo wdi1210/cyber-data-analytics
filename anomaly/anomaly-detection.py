@@ -1,6 +1,5 @@
 
 
-
 # In[]:
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,7 +9,7 @@ import os
 import math
 
 
-DATAPATH = 'anomaly/data'
+DATAPATH = 'data'
 
 dateparse = lambda x: pd.datetime.strptime(x, '%d/%m/%y %H')
 
@@ -19,15 +18,19 @@ parse_dates=[0], date_parser=dateparse)
 data4 = pd.read_csv(os.path.join(DATAPATH, 'BATADAL_dataset04.csv'), index_col=0, parse_dates=[0], date_parser=dateparse)
 data_test = pd.read_csv(os.path.join(DATAPATH, 'BATADAL_test_dataset.csv'), index_col=0, parse_dates=[0], date_parser=dateparse)
 
+# for k, v in enumerate(data4.columns):
+#     print("{} - {}".format(k, v))
 # data4 and data_test seem to have spaces before the labels....
 data4.columns = data3.columns
 data_test.columns = data3.columns[:len(data3.columns)-1]
 
-# for k, v in enumerate(data4.columns):
-#     print("{} - {}".format(k, v))
+# Separate labels, test dataset has no labels
+data3_labels = data3['ATT_FLAG']
+data4_labels = data4['ATT_FLAG']
+data3.drop(columns=['ATT_FLAG'], inplace=True)
+data4.drop(columns=['ATT_FLAG'], inplace=True)
 
 # Helper functions
-
 def getDate(df):
     return df['DATETIME']
 
@@ -45,7 +48,7 @@ def getPumpInfo(df, pump_id):
 
 # Only valve 2
 def getValve(df):
-    return df[["F_V2", "S_V2"]]
+    return df[['F_V2', 'S_V2']]
 
 # Pressure levels, 1 to 12
 def getPressure(df, junction_id):
@@ -56,36 +59,17 @@ def getAttackFlag(df):
     return df[['ATT_FLAG']]
 
 
-data3_labels = getAttackFlag(data3)
-data4_labels =  getAttackFlag(data4)
 
-data3.drop(columns=['ATT_FLAG'], inplace=True)
-data4.drop(columns=['ATT_FLAG'], inplace=True)
+
 
 def timerseries_test_train_split(data, labels, split):
     split_Nr = int(len(data) * split)
-    data = data.as_matrix()
-    labels = labels.as_matrix()
-    X_train = data[:-split_Nr]
-    X_test = data[-split_Nr]
-    y_train = labels[:-split_Nr]
-    y_test = labels[-split_Nr]
+    X_train = data.iloc[:-split_Nr]
+    X_test = data.iloc[-split_Nr:]
+    y_train = labels.iloc[:-split_Nr]
+    y_test = labels.iloc[-split_Nr:]
 
     return [X_train, X_test, y_train, y_test]
-
-
-# In[]
-# data = data3.iloc[0:500]
-
-# tank1 = getTankLevel(data, 1)
-
-# ma = tank1.rolling(20).sum()
-
-# info = pd.concat([getDate(data), tank1, ma], axis = 1)
-# info.columns = ['Datetime', 'L_T2', 'MA_L_T2']
-# info.plot(x='Datetime')
-# info.head()
-
 
 ##################
 # Basic prediction
@@ -96,32 +80,27 @@ from statsmodels.tsa.ar_model import AR
 data = data3
 
 model = AR(getTankLevel(data, 1)).fit()
-yhat = model.predict(len(data)-30, len(data))
-actual = getTankLevel(data.tail(31), 1)
+yhat = model.predict(len(data)-100, len(data))
+actual = getTankLevel(data.tail(101), 1)
 
 plt.plot(actual.to_numpy(), label='Actual')
 plt.plot(yhat.to_numpy(), label='Predicted')
 plt.legend()
 plt.show()
 
-#print(yhat.to_numpy())
-#print(actual.to_numpy())
-
-
-##################
 # Select Data and evaluate parameters 
-#################
 # In[]:
 from statsmodels.tsa.arima_model import ARMA
 from pandas.plotting import autocorrelation_plot
 
 data = data4['L_T1'] # Update accordingly between L_T1 - L_T5
 
-test_train_split = int(len(data) * 0.9)
+test_train_split = int(len(data) * 0.95)
 train, test = data.iloc[0:test_train_split], data.iloc[test_train_split:len(data)]
 
 ax = autocorrelation_plot(train)
 ax.set_xlim([0, 35])
+
 
 ##################
 # Train ARMA model and predict
@@ -129,24 +108,45 @@ ax.set_xlim([0, 35])
 # In[]:
 # we update order=(p,q) accordingly. q=1 for all.
 # For L_T1: p=10, L_T2: p=6, L_T3 and LT_4: p=4, L_T5: p=3.
-model = ARMA(train.values, order=(100, 1)).fit()
+# model = ARMA(train.values, order=(10, 1)).fit()
 
-#print(model.summary())
-# plot residual errors
-residuals = pd.DataFrame(model.resid)
-residuals.plot(title="Residuals")
-plt.show()
-residuals.plot(kind='kde', title='Residual Density')
-plt.show()
+# #print(model.summary())
+# # plot residual errors
+# residuals = pd.DataFrame(model.resid)
+# residuals.plot(title='Residuals')
+# plt.show()
+# residuals.plot(kind='kde', title='Residual Density')
+# plt.show()
 #print(residuals.describe()) 
 
-predictions = model.forecast(steps=len(test))[0]
+print(len(test))
+history = [x for x in train]
+predictions = list()
+t = 0
+# for t in range(len(test)):
+while t < len(test)-5:
+    model = ARMA(history, order=(10,1))
+    model_fit = model.fit(disp=0)
+    output = model_fit.forecast(steps=5)
+    print(output)
+    yhat = output[0]
+    predictions.append(yhat)
+    obs = np.array(test)[t:t+5]
+    for x in yhat:
+        history.append(x)
+    # history.append(yhat)
+    print('predicted={}, expected={}'.format(yhat, obs))
+    print(t)
+    t = t+5
 
-##################
+
+# predictions = model.forecast(steps=len(test))[0]
+
+
 # Compute the performance of the prediction
-##################
 # In[]:
-x = pd.DataFrame(data = predictions, index = test.index.values)
+predictions = np.array(predictions).ravel()
+x = pd.DataFrame(data = predictions, index = test.index.values[0:len(predictions)])
 x.index.name = test.index.name
 result = pd.concat([test, x], axis=1)
 result.columns = ['Expected', 'Predictions']
@@ -164,9 +164,8 @@ sns.distplot(diff.values, hist=False, kde=True,
 # for i in range(1, len(test)):
 #     print('got {} - expected {}'.format(predictions[i], test.values[i]))
 
-##################
+
 # Plotting expected and predicted values from ARMA
-##################
 # In[]:
 print(result)
 plt.plot(result['Expected'], label='Expected')
@@ -189,10 +188,10 @@ dataDisc['group'] = pd.cut(np.array(dataDisc).ravel(), 5, labels=['very low', 'l
 dataDisc['label'] = data4_labels
 
 sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='group', data=dataDisc.reset_index(), fit_reg=False)
-plt.savefig("discretization-group.png")
+plt.savefig('discretization-group.png')
 
 sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='label', data=dataDisc.reset_index(), fit_reg=False)
-plt.savefig("discretization-label.png")
+plt.savefig('discretization-label.png')
 
 # print(''.join(dataDisc['group']))
 
@@ -216,11 +215,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_recall_curve, average_precision_score, roc_curve, auc
 import numpy as np
 
-def anomalyScores(originalDF, reducedDF):
-    loss = np.sum((np.array(originalDF)-np.array(reducedDF))**2, axis=1)
-    loss = pd.Series(data=loss,index=originalDF.index)
-    loss = (loss-np.min(loss))/(np.max(loss)-np.min(loss))
-    return loss
 
 
 X_train, X_test, y_train, y_test = train_test_split(data4, data4_labels, test_size=0.33, random_state=2019, stratify=data4_labels)
@@ -252,7 +246,11 @@ X_train_PCA_inverse = pca.inverse_transform(X_train_PCA)
 X_train_PCA_inverse = pd.DataFrame(data=X_train_PCA_inverse, 
                                    index=X_train.index)
 
-anomalyScoresPCA = anomalyScores(X_train, X_train_PCA_inverse)
+# Anomaly score by distance squared
+anomalyScoresPCA = np.sum((np.array(X_train)-np.array(X_train_PCA_inverse))**2, axis=1)
+anomalyScoresPCA = pd.Series(data=anomalyScoresPCA,index=X_train.index)
+anomalyScoresPCA = (anomalyScoresPCA-np.min(anomalyScoresPCA))/(np.max(anomalyScoresPCA)-np.min(anomalyScoresPCA))
+
 # anomalyScoresPCA.columns
 anomalyScoresPCA = pd.concat([anomalyScoresPCA, data4_labels], axis=1, join='inner')
 
@@ -266,9 +264,8 @@ anomalyScoresPCA.rename(columns = {0:'anomalyScore'}, inplace=True)
 # print('index', anomalyScoresPCA.index.name)
 
 anomalyScoresPCA.reset_index(inplace=True)
-print(anomalyScoresPCA.head())
 sns_plot = sns.lmplot(x='DATETIME', y='anomalyScore', hue='ATT_FLAG', data=anomalyScoresPCA, fit_reg=False)
-plt.savefig("pca_distance.png")
+plt.savefig('pca_distance.png')
 
 # preds = plotResults(y_train, anomalyScoresPCA, True)
 
@@ -310,7 +307,6 @@ print(PCAprecision, PCArecall)
 ######################
 ##### Bonus: PyTorch
 ######################
-
 # Define Pytorch long short term memory network
 # In[]:
 import torch
@@ -355,24 +351,21 @@ class LSTM(nn.Module):
 
 # Define and train model
 # In[]
-
-
-    
-test_size = 0.2
-torch_data = getTankLevel(data3, 1)
-X_train, X_test, y_train, y_test = timerseries_test_train_split(torch_data, data3_labels, test_size)
-
-
 # Data split
-X_train = torch.from_numpy(X_train).type(torch.Tensor).view([1, -1, 1])
-# X_test = torch.from_numpy(stable_ar.X_test).type(torch.Tensor).view([input_size, -1, 1])
-y_train = torch.from_numpy(y_train).type(torch.Tensor).view(-1)
-# y_test = torch.from_numpy(stable_ar.y_test).type(torch.Tensor)
+test_size = 0.2
+torch_data = getTankLevel(data4, 2)
+X_train, X_test, y_train, y_test = timerseries_test_train_split(torch_data, torch_data, test_size)
+
+# Transform data for pandas
+X_train = torch.from_numpy(X_train.values).type(torch.Tensor).view([1, -1, 1])
+X_test = torch.from_numpy(X_test.values).type(torch.Tensor).view([1, -1, 1])
+y_train = torch.from_numpy(y_train.values).type(torch.Tensor).view(-1)
+y_test = torch.from_numpy(y_test.values).type(torch.Tensor).view(-1)
 
 
 # Define model and optimiser
-model = LSTM(input_dim=1, hidden_dim=32, batch_size=math.ceil((1-test_size)*len(torch_data)), output_dim=1, num_layers=2)
-training_epochs = 100
+model = LSTM(input_dim=1, hidden_dim=64, batch_size=math.ceil((1-test_size)*len(torch_data)), output_dim=1, num_layers=1)
+training_epochs = 150
 optimiser = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # set training mode
@@ -394,7 +387,6 @@ for t in range(training_epochs):
     loss = model.loss(y_pred, y_train)
     hist[t] = loss.item()
 
-
     # Zero out gradient between steps
     optimiser.zero_grad()
     # Backward pass
@@ -404,15 +396,27 @@ for t in range(training_epochs):
 
 # Plots and performance
 
-print(y_train)
-plt.plot(y_pred.detach().numpy(), label="Predictions")
-plt.plot(y_train.detach().numpy(), label="Data")
+plt.plot(y_pred.detach().numpy()[0:200], 'y--', label='Predictions')
+plt.plot(y_train.detach().numpy()[0:200], 'r--', label='Data')
 plt.legend()
 plt.show()
 
-plt.plot(hist, label="Training loss")
+plt.plot(y_pred.detach().numpy()[1600:1800], 'y-', label='Predictions')
+plt.plot(y_train.detach().numpy()[1600:1800], 'r--', label='Data')
 plt.legend()
 plt.show()
+
+plt.plot(hist, label='Training loss')
+plt.legend()
+plt.show()
+
+torch_res = pd.DataFrame({'PREDICTIONS': y_pred.detach().numpy(), 'ACTUAL': y_train.detach().numpy(), 'LABEL': data4_labels.iloc[:len(y_pred)]})
+
+
+torch_res['anomalyScore'] = (torch_res['ACTUAL'] - torch_res['PREDICTIONS'])**2
+torch_res.head()
+torch_plot = sns.lmplot(x='DATETIME', y='anomalyScore', hue='LABEL', data=torch_res.reset_index(), fit_reg=False)
+
 
 
 #%%
