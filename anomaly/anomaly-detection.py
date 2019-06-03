@@ -62,6 +62,17 @@ data4_labels =  getAttackFlag(data4)
 data3.drop(columns=['ATT_FLAG'], inplace=True)
 data4.drop(columns=['ATT_FLAG'], inplace=True)
 
+def timerseries_test_train_split(data, labels, split):
+    split_Nr = int(len(data) * split)
+    data = data.as_matrix()
+    labels = labels.as_matrix()
+    X_train = data[:-split_Nr]
+    X_test = data[-split_Nr]
+    y_train = labels[:-split_Nr]
+    y_test = labels[-split_Nr]
+
+    return [X_train, X_test, y_train, y_test]
+
 
 # In[]
 # data = data3.iloc[0:500]
@@ -345,16 +356,7 @@ class LSTM(nn.Module):
 # Define and train model
 # In[]
 
-def timerseries_test_train_split(data, labels, split):
-    split_Nr = int(len(data) * split)
-    data = data.as_matrix()
-    labels = labels.as_matrix()
-    X_train = data[:-split_Nr]
-    X_test = data[-split_Nr]
-    y_train = labels[:-split_Nr]
-    y_test = labels[-split_Nr]
 
-    return [X_train, X_test, y_train, y_test]
     
 test_size = 0.2
 torch_data = getTankLevel(data3, 1)
