@@ -62,11 +62,11 @@ def timerseries_test_train_split(data, split):
     test = data.iloc[-split_Nr:]
     return train, test
 
-
+# In[]:
 ###################################
 # Basic prediction
 ###################################
-# In[]:
+
 from statsmodels.tsa.ar_model import AR
 
 data = data4
@@ -79,15 +79,16 @@ yhat = model.predict(len(train), len(train) + len(test))
 plt.plot(test.to_numpy(), label='Actual')
 plt.plot(yhat.to_numpy(), 'r--', label='Predicted')
 plt.legend()
+plt.savefig('basic-prediction.png')
 plt.show()
 
 
-
+# In[]:
 ############################################
 # Train ARMA model and predict
 ############################################
 # Select Data and evaluate parameters 
-# In[]:
+
 from statsmodels.tsa.arima_model import ARMA
 from pandas.plotting import autocorrelation_plot
 
@@ -145,6 +146,7 @@ sns.distplot(result['diff'].values, hist=False, kde=True,
 plt.plot(result['Expected'], label='Expected')
 plt.plot(result['Predictions'], label='Predicted')
 plt.legend()
+plt.savefig('arma-prediction.png')
 plt.show()
 
 anomalyARMA = result.merge(data4_labels, left_on="DATETIME", right_on="DATETIME")
@@ -155,11 +157,11 @@ plt.savefig('ARMA_anomaly.png')
 
 
 
-
+# In[]:
 ########################################3
 # Discretize data
 #########################################
-# In[]:
+
 dataDisc = getTankLevel(data4, 1)
 
 dataDisc_train, dataDisc_test = timerseries_test_train_split(dataDisc, 0.5)
@@ -186,15 +188,15 @@ dataDisc_test = dataDisc_test.merge(data4_labels, left_on='DATETIME', right_on='
 sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='group', data=dataDisc_test.reset_index(), fit_reg=False)
 plt.savefig('discretization-test-group.png')
 sns_plot = sns.lmplot(x='DATETIME', y='L_T1', hue='ATT_FLAG', data=dataDisc_test.reset_index(), fit_reg=False)
-plt.savefig('discretization-train-label.png')
+plt.savefig('discretization-test-label.png')
 
 
 
-
+# In[]
 #######################################
 # PCA anomaly detection
 #######################################
-#%%
+
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_recall_curve, average_precision_score, roc_curve, auc
@@ -260,9 +262,9 @@ attack = 'L_T1 / PU1 / PU2'
 print(anomalyARMA.columns)
 armaDecision = 5
 TP = anomalyARMA.loc[(anomalyARMA['ATT_FLAG'] == attack) & (anomalyARMA['anomalyScore'] > armaDecision)]
-FP = anomalyARMA.loc[(anomalyARMA['ATT_FLAG']!= attack) & (anomalyARMA['anomalyScore'] > armaDecision)]
-TN = anomalyARMA.loc[(anomalyARMA['ATT_FLAG']!= attack) & (anomalyARMA['anomalyScore'] <= armaDecision)]
-FN = anomalyARMA.loc[(anomalyARMA['ATT_FLAG']!= attack) & (anomalyARMA['anomalyScore'] <= armaDecision)]
+FP = anomalyARMA.loc[(anomalyARMA['ATT_FLAG'] != attack) & (anomalyARMA['anomalyScore'] > armaDecision)]
+TN = anomalyARMA.loc[(anomalyARMA['ATT_FLAG'] != attack) & (anomalyARMA['anomalyScore'] <= armaDecision)]
+FN = anomalyARMA.loc[(anomalyARMA['ATT_FLAG'] == attack) & (anomalyARMA['anomalyScore'] <= armaDecision)]
 
 ArmaPrecision = len(TP.index) / ( len(TP.index) + len(FP.index))
 ArmaRecall = len(TP.index) / ( len(TP.index) + len(FN.index))
@@ -285,9 +287,9 @@ print(DiscPrecision, DiscRecall)
 # PCA
 pcaDecision = 0.2
 TP = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG'] == attack) & (anomalyScoresPCA['anomalyScore'] > pcaDecision)]
-FP = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= attack) & (anomalyScoresPCA['anomalyScore'] > pcaDecision)]
-TN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= attack) & (anomalyScoresPCA['anomalyScore'] <= pcaDecision)]
-FN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG']!= attack) & (anomalyScoresPCA['anomalyScore'] <= pcaDecision)]
+FP = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG'] != attack) & (anomalyScoresPCA['anomalyScore'] > pcaDecision)]
+TN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG'] != attack) & (anomalyScoresPCA['anomalyScore'] <= pcaDecision)]
+FN = anomalyScoresPCA.loc[(anomalyScoresPCA['ATT_FLAG'] == attack) & (anomalyScoresPCA['anomalyScore'] <= pcaDecision)]
 
 PCAprecision = len(TP.index) / ( len(TP.index) + len(FP.index))
 PCArecall = len(TP.index) / ( len(TP.index) + len(FN.index))
@@ -295,12 +297,12 @@ PCArecall = len(TP.index) / ( len(TP.index) + len(FN.index))
 print(PCAprecision, PCArecall)
 
 
-
+# In[]:
 ######################
 ##### Bonus: PyTorch
 ######################
 # Define Pytorch long short term memory network
-# In[]:
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -417,13 +419,15 @@ plt.savefig('torch_anomaly_score.png')
 
 #%%
 # Performance
-pcaDecision = 0.2
-TP = torch_res.loc[(torch_res['ATT_FLAG'] == attack) & (torch_res['anomalyScore'] > pcaDecision)]
-FP = torch_res.loc[(torch_res['ATT_FLAG']!= attack) & (torch_res['anomalyScore'] > pcaDecision)]
-TN = torch_res.loc[(torch_res['ATT_FLAG']!= attack) & (torch_res['anomalyScore'] <= pcaDecision)]
-FN = torch_res.loc[(torch_res['ATT_FLAG']!= attack) & (torch_res['anomalyScore'] <= pcaDecision)]
+pcaDecision = 0.65
+TP = torch_res.loc[(torch_res['LABEL'] == attack) & (torch_res['anomalyScore'] > pcaDecision)]
+FP = torch_res.loc[(torch_res['LABEL'] != attack) & (torch_res['anomalyScore'] > pcaDecision)]
+TN = torch_res.loc[(torch_res['LABEL'] != attack) & (torch_res['anomalyScore'] <= pcaDecision)]
+FN = torch_res.loc[(torch_res['LABEL'] == attack) & (torch_res['anomalyScore'] <= pcaDecision)]
 
 TORCHprecision = len(TP.index) / ( len(TP.index) + len(FP.index))
 TORCHrecall = len(TP.index) / ( len(TP.index) + len(FN.index))
 
 print(TORCHprecision, TORCHrecall)
+
+#%%
