@@ -1,3 +1,17 @@
+
+# In[]
+###  Resevoir samling
+################################
+import os
+import pandas as pd
+
+DATAFILE = r'lab3/data/capture20110812.pcap.netflow.labeled.csv'
+
+col_names = ['Date_1', 'Date_2', 'Durat', 'Prot', 'SrcIPAddr:Port', 'direction', 'DstAddr:Port.1', 'Flags', 'Tos', 'Packets', 'Bytes',
+       'Flows', 'Label', 'Labels']
+csv = pd.read_csv(DATAFILE, delimiter='\s+', skiprows=1, names=col_names)
+
+
 # In[]
 # Util functions
 ###############################
@@ -10,64 +24,54 @@ def modifyData(df):
     df.drop(['Date_1', 'Date_2', 'direction'], axis = 1, inplace=True)
     
 
-def reservoirSample(input_df, result_df, rezSize):
-    if len(result_df) < rezSize:
-        diff = rezSize - len(result_df)
-        diff = min(diff, len(input_df))
-        result_df = pd.concat([input_df.head(diff), result_df])
-    else:
-        for i in range(rezSize, len(input_df)):
-            j = random.randint(1, rezSize)
-            if j < rezSize:
-                result_df.iloc[j] = input_df.iloc[i]
+def reservoirSample(input_df, size):
+    result_df = pd.DataFrame()
+    for i in range(size):
+        result_df = result_df.append(input_df.iloc[i])
 
-def concat2(a, b):
-    return pd.concat([a,b])
+    for i in range(size+1, len(input_df)):
+        j = random.randint(0, len(input_df))
+        if j < size:
+            result_df.iloc[j] = input_df.iloc[i]
+    return result_df
 
 
 
-
-# In[]
-###  Resevoir samling
-################################
-import os
-import pandas as pd
-
-DATAFILE = r'lab3/data/capture20110812.pcap.netflow.labeled.csv'
-CHUNK_SIZE = 100
-
-
-col_names = ['Date_1', 'Date_2', 'Durat', 'Prot', 'SrcIPAddr:Port', 'direction', 'DstAddr:Port.1', 'Flags', 'Tos', 'Packets', 'Bytes',
-       'Flows', 'Label', 'Labels']
-# chunks = pd.read_csv(DATAFILE, delimiter='\s+', skiprows=1, names=col_names, chunksize=CHUNK_SIZE)
-csv = pd.read_csv(DATAFILE, delimiter='\s+', skiprows=1, names=col_names)
 #%%
-num_chunks = int(sum(1 for row in open(DATAFILE, 'r')) / CHUNK_SIZE) + 1
-chunk_id = iter(range(1, num_chunks+1))
+#############################
+# Resevoir sampling
+#############################
+sample = reservoirSample(csv, 1000)
+# display(sample.head())
 
-
-print(num_chunks)
-
-resevoir = pd.DataFrame()
-for df in chunks:
-    currentid = next(chunk_id)
-    print("Processing chunk {} of {}".format(currentid, num_chunks), end="\r")
-
-    if currentid == 2:
-        break
-
-    modifyData(df)
-
-    display(df.head())
-
-    # resevoir = pd.concat([df, resevoir])
-    resevoir = concat2(df, resevoir)
-
-    display(resevoir.head())
-    # reservoirSample(df, resevoir, 200)
-    
-    
 #%%
-resevoir.head()
+# sample['DstAddr:Port.1'].value_counts()
+sample['SrcIPAddr:Port'].value_counts()
 
+
+#%%
+##############################
+# Sketching Task
+##############################
+
+
+#%%
+###############################
+# Flow Data Discretization
+###############################
+
+#%%
+###############################
+# Botnet profiling
+###############################
+
+#%%
+###############################
+# Flow classification
+###############################
+
+#%%
+###############################
+# Bonus: Adversarial examples
+###############################
 #%%
