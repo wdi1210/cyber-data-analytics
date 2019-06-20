@@ -64,12 +64,10 @@ data4.drop(columns=['ATT_FLAG'], inplace=True)
 
 def timerseries_test_train_split(data, labels, split):
     split_Nr = int(len(data) * split)
-    data = data.as_matrix()
-    labels = labels.as_matrix()
-    X_train = data[:-split_Nr]
-    X_test = data[-split_Nr:]
-    y_train = labels[:-split_Nr]
-    y_test = labels[-split_Nr:]
+    X_train = data.iloc[:-split_Nr]
+    X_test = data.iloc[-split_Nr:]
+    y_train = labels.iloc[:-split_Nr]
+    y_test = labels.iloc[-split_Nr:]
 
     return [X_train, X_test, y_train, y_test]
 
@@ -113,12 +111,11 @@ plt.show()
 from statsmodels.tsa.arima_model import ARMA
 from pandas.plotting import autocorrelation_plot
 
-data = data4['L_T1'] # Update accordingly between L_T1 - L_T5
+AR_data = data4['L_T1'] # Update accordingly between L_T1 - L_T5
 
-test_train_split = int(len(data) * 0.9)
-train, test = data.iloc[0:test_train_split], data.iloc[test_train_split:len(data)]
+X_train, X_test, y_train, y_test = timerseries_test_train_split(AR_data, AR_data, 0.2)
 
-ax = autocorrelation_plot(train)
+ax = autocorrelation_plot(X_train)
 ax.set_xlim([0, 35])
 
 ##################
@@ -127,7 +124,7 @@ ax.set_xlim([0, 35])
 # In[]:
 # we update order=(p,q) accordingly. q=1 for all.
 # For L_T1: p=10, L_T2: p=6, L_T3 and LT_4: p=4, L_T5: p=3.
-model = ARMA(train.values, order=(100, 1)).fit()
+model = ARMA(X_train.values, order=(10, 1)).fit()
 
 #print(model.summary())
 # plot residual errors
@@ -138,13 +135,13 @@ residuals.plot(kind='kde', title='Residual Density')
 plt.show()
 #print(residuals.describe()) 
 
-predictions = model.forecast(steps=len(test))[0]
+predictions = model.forecast(steps=len(y_test))[0]
 
 # Compute the performance of the prediction
 # In[]:
-x = pd.DataFrame(data = predictions, index = test.index.values)
-x.index.name = test.index.name
-result = pd.concat([test, x], axis=1)
+x = pd.DataFrame(data = predictions, index = y_test.index.values)
+x.index.name = y_test.index.name
+result = pd.concat([y_test, x], axis=1)
 result.columns = ['Expected', 'Predictions']
 
 # result.plot()
