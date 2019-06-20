@@ -67,9 +67,9 @@ def timerseries_test_train_split(data, labels, split):
     data = data.as_matrix()
     labels = labels.as_matrix()
     X_train = data[:-split_Nr]
-    X_test = data[-split_Nr]
+    X_test = data[-split_Nr:]
     y_train = labels[:-split_Nr]
-    y_test = labels[-split_Nr]
+    y_test = labels[-split_Nr:]
 
     return [X_train, X_test, y_train, y_test]
 
@@ -108,9 +108,7 @@ plt.show()
 #print(actual.to_numpy())
 
 
-##################
 # Select Data and evaluate parameters 
-#################
 # In[]:
 from statsmodels.tsa.arima_model import ARMA
 from pandas.plotting import autocorrelation_plot
@@ -142,9 +140,7 @@ plt.show()
 
 predictions = model.forecast(steps=len(test))[0]
 
-##################
 # Compute the performance of the prediction
-##################
 # In[]:
 x = pd.DataFrame(data = predictions, index = test.index.values)
 x.index.name = test.index.name
@@ -164,9 +160,8 @@ sns.distplot(diff.values, hist=False, kde=True,
 # for i in range(1, len(test)):
 #     print('got {} - expected {}'.format(predictions[i], test.values[i]))
 
-##################
+
 # Plotting expected and predicted values from ARMA
-##################
 # In[]:
 print(result)
 plt.plot(result['Expected'], label='Expected')
@@ -216,6 +211,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_recall_curve, average_precision_score, roc_curve, auc
 import numpy as np
 
+# Anomaly score by distance squared
 def anomalyScores(originalDF, reducedDF):
     loss = np.sum((np.array(originalDF)-np.array(reducedDF))**2, axis=1)
     loss = pd.Series(data=loss,index=originalDF.index)
@@ -223,7 +219,7 @@ def anomalyScores(originalDF, reducedDF):
     return loss
 
 
-X_train, X_test, y_train, y_test = train_test_split(data4, data4_labels, test_size=0.33, random_state=2019, stratify=data4_labels)
+X_train, X_test, y_train, y_test = train_test_split(data4, data4_labels, test_size=0.33, random_state=2019)
 
 
 ## Evaluate the amount of PCA features to use
@@ -345,6 +341,7 @@ class LSTM(nn.Module):
         lstm_out, self.hidden = self.lstm(input.view(len(input), self.batch_size, -1))
         # prediction
         y_pred = self.linear(lstm_out[-1].view(self.batch_size, -1))
+
         return y_pred.view(-1)
 
     # Compute loss
@@ -354,14 +351,11 @@ class LSTM(nn.Module):
 
 
 # Define and train model
-# In[]
+# In[]:
 
-
-    
 test_size = 0.2
-torch_data = getTankLevel(data3, 1)
-X_train, X_test, y_train, y_test = timerseries_test_train_split(torch_data, data3_labels, test_size)
-
+torch_data = getTankLevel(data4, 1)
+X_train, X_test, y_train, y_test = timerseries_test_train_split(torch_data, torch_data, test_size)
 
 # Data split
 X_train = torch.from_numpy(X_train).type(torch.Tensor).view([1, -1, 1])
@@ -371,9 +365,9 @@ y_train = torch.from_numpy(y_train).type(torch.Tensor).view(-1)
 
 
 # Define model and optimiser
-model = LSTM(input_dim=1, hidden_dim=32, batch_size=math.ceil((1-test_size)*len(torch_data)), output_dim=1, num_layers=2)
-training_epochs = 100
-optimiser = torch.optim.Adam(model.parameters(), lr=0.001)
+model = LSTM(input_dim=1, hidden_dim=64, batch_size=math.ceil((1-test_size)*len(torch_data)), output_dim=1, num_layers=2)
+training_epochs = 500
+optimiser = torch.optim.Adam(model.parameters())
 
 # set training mode
 model.train()
@@ -381,7 +375,7 @@ model.train()
 hist = np.zeros(training_epochs)
 for t in range(training_epochs):
     # Clear stored gradient
-    model.zero_grad()
+    # model.zero_grad()
     
     # Initialise hidden state
     # Don't do this if you want your LSTM to be stateful
@@ -394,7 +388,6 @@ for t in range(training_epochs):
     loss = model.loss(y_pred, y_train)
     hist[t] = loss.item()
 
-
     # Zero out gradient between steps
     optimiser.zero_grad()
     # Backward pass
@@ -403,10 +396,13 @@ for t in range(training_epochs):
     optimiser.step()
 
 # Plots and performance
+# plt.plot(y_pred.detach().numpy(), label="Predictions")
+# plt.plot(y_train.detach().numpy(), label="Data")
+# plt.legend()
+# plt.show()
 
-print(y_train)
-plt.plot(y_pred.detach().numpy(), label="Predictions")
-plt.plot(y_train.detach().numpy(), label="Data")
+plt.plot(y_pred.detach().numpy()[1600:1800], label="Predictions")
+plt.plot(y_train.detach().numpy()[1600:1800], 'r--', label="Data")
 plt.legend()
 plt.show()
 
@@ -414,5 +410,28 @@ plt.plot(hist, label="Training loss")
 plt.legend()
 plt.show()
 
+diff = np.subtract(y_pred.detach().numpy(), y_train.detach().numpy())[1600:1800]
+plt.plot(diff, label="Difference")
+plt.legend()
+plt.show()
+
+
+
+#%%
+
+torch_df = pd.DataFrame({"predictions":y_pred.detach().numpy(), "actual" : y_train.detach().numpy()})
+torch_df.head()
+
+torch_df = pd.concat([torch_df, data4_labels], axis = 1)
+torch_df.set_index("DATETIME", inplace=True)
+torch_df.head()
+
+torch_df['delta'] = (torch_df['predictions'] - torch_df['actual'])**2
+
+torch_df.head()
+
+sns_plot = sns.lmplot(x='DATETIME', y='delta', hue='ATT_FLAG', data=torch_df.reset_index(), fit_reg=False)
+
+# data4_labels.reset_index().index[data4_labels['ATT_FLAG'] == 1].tolist()
 
 #%%
