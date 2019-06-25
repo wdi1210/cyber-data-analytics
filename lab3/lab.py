@@ -51,8 +51,10 @@ df_scen10 = loadData(DATAFILE1)
 # df_scen3.head()
 
 #%%
-INFECTED_HOST = '147.32.84.165' 
-df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOST]
+INFECTED_HOSTS = ['147.32.84.165', '147.32.84.191', '147.32.84.192', '147.32.84.193', '147.32.84.204', '147.32.84.205', '147.32.84.206', '147.32.84.207', '147.32.84.208', '147.32.84.209']
+
+NORMAL_HOSTS = ['147.32.84.170', '147.32.84.134', '147.32.84.164', '147.32.87.36', '147.32.80.9', '147.32.87.11']
+df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOSTS[0]
 display('df_scen10_filtered rows: {}'.format(len(df_scen10_filtered)))
 
 #%%
@@ -135,7 +137,7 @@ df_scen10_nobg = df_scen10[(df_scen10['Label'] != 'Background')]
 import seaborn as sns
 
 corr_mat = df_scen10_nobg.reset_index().drop(['Date'], axis=1)
-toFactorize = ['Protocol', 'Flags', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']
+toFactorize = ['Protocol', 'Flags', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort', 'Label']
 for tf in toFactorize:
     corr_mat[tf+'_fact'] = pd.factorize(corr_mat[tf])[0]
 corr = corr_mat.corr()
@@ -148,134 +150,148 @@ plt.savefig('flow_conf_mat.png')
 plt.show()
 
 #%%
-# TODO lots showing difference between infected and normal bytes/packets and protocol/flags
+toFactorize = ['Protocol', 'Flags']
+for tf in toFactorize:
+    df_scen10_nobg[tf] = pd.factorize(df_scen10_nobg[tf])[0]
 
+df_scen10_nobg_inf = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == INFECTED_HOSTS[0]]
+df_scen10_nobg_norm = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == NORMAL_HOSTS[0]]
 
+#%%
+display('infected', df_scen10_nobg_inf[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
+display('clean', df_scen10_nobg_norm[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
+# TODO Plot these discribes 
 
 
 #%%
 from sklearn.cluster import KMeans
 
+for feat in ['Bytes', 'Protocol']:
+    X = df_scen10_nobg[[feat]]
+    distorsions = []
+    maxClusters = 10
+    for k in range(2, maxClusters):
+        print('computing using {} clusters'.format(k), end='\r')
+        kmeans = KMeans(n_clusters=k)
+        kmeans.fit(X)
+        distorsions.append(kmeans.inertia_)
 
-X = df_scen10_nobg[['Bytes', 'Packets']]
-distorsions = []
-for k in range(2, 20):
-    kmeans = KMeans(n_clusters=k)
-    kmeans.fit(X)
-    distorsions.append(kmeans.inertia_)
-
-fig = plt.figure(figsize=(15, 5))
-plt.plot(range(2, 20), distorsions)
-plt.xticks(range(2, 20))
-plt.grid(True)
-plt.title('Elbow curve of SrcPort and Packets combination')
+    fig = plt.figure(figsize=(15, 5))
+    plt.plot(range(2, maxClusters), distorsions)
+    plt.xticks(range(2, maxClusters))
+    plt.grid(True)
+    plt.title('Elbow curve of ' + feat)
+    plt.savefig('elbow_{}.png'.format(feat))
 
 
 #%%
 
+def attributeEncoding(values, clusters):
+    percentiles = np.arange(0, 100, 100/clusters)
+    percentile_border = []
+    for p in percentiles:
+        percentile_border.append(np.percentile(values, p))
+    
+    encoded = np.zeros(len(values))
+    for i, v in enumerate(values):
+        for j, p in enumerate(percentile_border):
+            if v > p:
+                if i < 20:
+                    print(i, v, p ,j)
+                encoded[i] = j
+                pass;
+    
+    return encoded        
+
+# TODO only works with small arrays... WTF
+inf_byte_codes = attributeEncoding(df_scen10_nobg_inf['Bytes'].head(200).values, 6)
+inf_prot_codes = attributeEncoding(df_scen10_nobg_inf['Protocol'].head(200).values, 3)
+inf_combined = np.add(inf_byte_codes, inf_prot_codes)
+
+print('combined', inf_combined)
 
 
-df_scen10_nobg['relevant'] =  df_scen10_nobg[['SrcPort', 'Packets']].apply(lambda x: ':'.join(x.astype(str).values.tolist()), axis=1)
-df_scen10_nobg['relevant_fact'] = pd.factorize(df_scen10_nobg['relevant'])[0] 
+norm_byte_codes = attributeEncoding(df_scen10_nobg_norm['Bytes'].head(200).values, 6)
+norm_prot_codes = attributeEncoding(df_scen10_nobg_norm['Protocol'].head(200).values, 3)
+norm_combined = np.add(norm_byte_codes, norm_prot_codes)
+
 
 #%%
-from saxpy.sax import sax_via_window
-paa = 10
-alphabet = 20
-sax = sax_via_window(df_scen10_nobg['relevant_fact'].values, win_size=49, paa_size=paa, alphabet_size=alphabet, nr_strategy='none')
-
-#%%
-# Visualize discretization
-discrete = []
-
-for i in range(0,len(df_scen10_nobg),paa):
-    for gram in list(sax.keys()):
-        if i in sax[gram]:
-            for k in range(0,paa):
-                discrete.append(gram[0])
-            break
-   
-plt.plot(np.array(discrete)[0:1000])
-plt.savefig('discretization.png')
-plt.show()
-
-
-
 # Botnet profiling
 ###############################
 from hmmlearn import hmm
 
-# Separate in time windows
-# paper: BClus used 2 minutes
-WINDOW_WIDTH = '2m'
-df_scen10.rolling(WINDOW_WIDTH)
+infected_discretized = pd.DataFrame(data = inf_combined, index = df_scen10_nobg_inf.head(200).index)
+infected_discretized.head()
+#%%
+# Sliding window data
+# paper: BClu used 2 minutes
+WINDOW_WIDTH = 10
+inf_sliding_window = infected_discretized.rolling(window=WINDOW_WIDTH, min_periods=1).mean()
+inf_sliding_window.head()
 
-# Aggregate by source IP
-# paper used 1 minute
-AGGREGATE_WIDTH = '1m'
+#%%
+model = hmm.GaussianHMM(n_components=4, covariance_type="full", n_iter=100)
+model.fit(inf_sliding_window)
+
+model_likelyhood = model.score(inf_sliding_window)
 
 
-# Clustering
+
+#%%
+norm_discretized = pd.DataFrame(data = norm_combined, index = df_scen10_nobg_norm.head(200).index)
+norm_sliding_window = norm_discretized.rolling(window=WINDOW_WIDTH, min_periods=1).mean()
+norm_sliding_window.head()
+
+x = model.score(norm_sliding_window)
+# x
+
+
+# Evaluate
+def scoreForIP(ip):
+    df_scen10_nobg_ip = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == ip]
+
+    byte_codes = attributeEncoding(df_scen10_nobg_ip['Bytes'].values, 6)
+    prot_codes = attributeEncoding(df_scen10_nobg_ip['Protocol'].values, 3)
+    combined = np.add(byte_codes, prot_codes)
+    discretized = pd.DataFrame(data = combined, index = df_scen10_nobg_ip.index)
+    sliding = discretized.rolling(window=WINDOW_WIDTH, min_periods=1).mean()
+
+    return model.score(sliding)
+
+inf_likelyhoods = []
+for inf in range(1, len(INFECTED_HOSTS)):
+    inf_likelyhoods.append(scoreForIP(inf))
+
+norm_likelyhoods = []
+for norm in NORMAL_HOSTS:
+    norm_likelyhoods.append(scoreForIP(norm))
+
+
+#TODO diff tussen model_likelyhood en inf/norm likelyhood
 
 
 
-model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=100)
-model.fit()
-Z2 = model.predict(df_scen10)
+
+
+
+
+
+
+
 
 #%%
 # Flow classification
 ###############################
-from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
-from imblearn.over_sampling import SMOTE
-from collections import Counter
-from sklearn.ensemble import RandomForestClassifier
 
 
 #%%
 # Packet level classification
 
-# skf = StratifiedKFold(n_splits=10, shuffle=True)
-split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
-# for train_index, test_index in skf.split(features, labels):
-    # split += 1
-    #Select the data for this round
-    # X_train, X_test = features.loc[train_index], features.loc[test_index]    
-    # y_train, y_test = labels[train_index], labels[test_index]
 
-#Select the data for this round
-X_train, X_test = features.loc[train_index], features.loc[test_index]    
-y_train, y_test = labels[train_index], labels[test_index]
-
-#Use SMOTE on training data to get balanced data
-sm = SMOTE(random_state=42)
-X_train, y_train = sm.fit_resample(X_train, y_train)
-
-# Train classifier and predict
-clf = RandomForestClassifier(n_estimators=20)
-
-clf.fit(X_train, y_train)
-predictions = clf.predict(X_test)
-
-#Sum the confusion matrix values
-tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
-print('Split {}/10: \ntn {}\t fp {}\nfn {}\t\t tp {}'.format(split, tn, fp, fn, tp))
-totalTN += tn
-totalFP += fp
-totalFN += fn
-totalTP += tp
-
-print("--- Total sum confmat ---")
-print('tn {}\t fp {}\nfn {}\t\t tp {}'.format(totalTN, totalFP, totalFN, totalTP))
-
-accuracy = (totalTP + totalTN) / (totalTP + totalTN + totalFN + totalFP)
-precision = totalTP / (totalTP + totalFP)
-recall = totalTP / (totalTP + totalFN)
-
-print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, recall))
 
 #%%
-# Ip level classification
+# Host level classification
 
 #%%
 # Bonus: Adversarial examples
