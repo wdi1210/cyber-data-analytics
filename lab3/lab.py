@@ -315,33 +315,60 @@ def plot_PRcurve(recall, precision):
     plt.grid(True)
 plt.show()
 
+def eval_classifier(clf, X_train, X_test, y_train, y_test):
+    clf.fit(X_train, y_train)
+    predictions = clf.predict(X_test)
+
+    # ROC
+    fpr, tpr, _ = roc_curve(y_test, predictions)
+    plot_roc(fpr, tpr)
+    
+    # PR
+    precision, recall, _ = precision_recall_curve(y_test, predictions)
+    plot_PRcurve(recall, precision)
+    
+    # Confusion Matrix
+    print("TN", "FP")
+    print("FN", "TP")
+    confmat = confusion_matrix(y_test, predictions.astype(int))
+    print(pd.DataFrame(confmat))
+    measures = {'Accuracy': accuracy_score,
+                'Precision': precision_score,
+                'Recall': recall_score}
+    for name in measures:
+        print(name, measures[name](y_test, predictions.astype(int)))
+
 
 
 #%%
 # Packet level classification
 
 # class imbalance check
-df_botnet = df_scen10_nobg[df_scen10_nobg['Label'] == 'Botnet']
-df_normal = df_scen10_nobg[df_scen10_nobg['Label'] == 'LEGITIMATE']
-
-print('nr of botnet:\t\t{}\nnr of legitimate:\t{}'.format(len(df_botnet), len(df_normal)))
+df_scen10_nobg_host['Label'].value_counts().plot.bar()
 
 #%%
-
 labels = df_scen10_nobg['Label'].apply(lambda x : 1 if int(x == 'Botnet') else 0)
 features = df_scen10_nobg[['Duration', 'Protocol', 'Flags', 'Packets', 'Bytes', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']]
-features['SrcPort'] = df_scen10_nobg['SrcPort'].astype(int)
+toFactorize = ['SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']
+for tf in toFactorize:
+    features[tf] = pd.factorize(features[tf])[0]
+
+
+#%%
+#  basic eval of classifier
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.4)
+eval_classifier(RandomForestClassifier(n_estimators=20), X_train, X_test, y_train, y_test)
+
+
 #%%
 skf = StratifiedKFold(n_splits=10, shuffle=True)
 split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
 for train_index, test_index in skf.split(features, labels):
     split += 1
     #Select the data for this round
-    X_train, X_test = features.loc[train_index], features.loc[test_index]    
+    X_train, X_test = features.iloc[train_index], features.iloc[test_index]    
     y_train, y_test = labels[train_index], labels[test_index]
     
-
-
     # Train classifier and predict
     clf = RandomForestClassifier(n_estimators=20)
 
@@ -368,6 +395,27 @@ print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, reca
 
 #%%
 # Host level classification
+
+# To get information on a host level we aggregate by SrcIPAddr, and 
+df_scen10_nobg_host = df_scen10_nobg.groupby(['SrcIPAddr']).agg({'Duration':'mean', 'Protocol':'nunique', 'Flags':'nunique', 'Packets':'mean', 'Bytes':'mean', 'SrcPort':'nunique', 'DstIPAddr':'nunique', 'DstPort':'nunique', 'Label':'unique'})
+df_scen10_nobg_host['MostProtocol'] = df_scen10_nobg.groupby('SrcIPAddr')['Protocol'].apply(lambda x: x.value_counts().index[0])
+# df_scen10_nobg_host['MostSrcPort'] = df_scen10_nobg.groupby('SrcIPAddr')['SrcPort'].apply(lambda x: x.value_counts().index[0])
+# df_scen10_nobg_host['MostDstPort'] = df_scen10_nobg.groupby('SrcIPAddr')['DstPort'].apply(lambda x: x.value_counts().index[0])
+
+df_scen10_nobg_host['Label_size'] = df_scen10_nobg_host['Label'].apply(lambda x : len(x))
+
+df_scen10_nobg_host = df_scen10_nobg_host[df_scen10_nobg_host['Label_size'] == 1]
+df_scen10_nobg_host['Label'] = df_scen10_nobg_host['Label'].apply(lambda x : x[0])
+
+df_scen10_nobg_host.head()
+
+#%%
+# class imbalance check
+df_scen10_nobg_host['Label'].value_counts().plot.bar()
+
+
+#%%
+
 
 #%%
 # Bonus: Adversarial examples
