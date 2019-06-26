@@ -54,7 +54,7 @@ df_scen10 = loadData(DATAFILE1)
 INFECTED_HOSTS = ['147.32.84.165', '147.32.84.191', '147.32.84.192', '147.32.84.193', '147.32.84.204', '147.32.84.205', '147.32.84.206', '147.32.84.207', '147.32.84.208', '147.32.84.209']
 
 NORMAL_HOSTS = ['147.32.84.170', '147.32.84.134', '147.32.84.164', '147.32.87.36', '147.32.80.9', '147.32.87.11']
-df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOSTS[0]
+df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOSTS[0]]
 display('df_scen10_filtered rows: {}'.format(len(df_scen10_filtered)))
 
 #%%
@@ -188,31 +188,25 @@ for feat in ['Bytes', 'Protocol']:
 
 def attributeEncoding(values, clusters):
     percentiles = np.arange(0, 100, 100/clusters)
+    
     percentile_border = []
     for p in percentiles:
         percentile_border.append(np.percentile(values, p))
-    
     encoded = np.zeros(len(values))
     for i, v in enumerate(values):
         for j, p in enumerate(percentile_border):
             if v > p:
-                if i < 20:
-                    print(i, v, p ,j)
                 encoded[i] = j
                 pass;
     
     return encoded        
 
-# TODO only works with small arrays... WTF
-inf_byte_codes = attributeEncoding(df_scen10_nobg_inf['Bytes'].head(200).values, 6)
-inf_prot_codes = attributeEncoding(df_scen10_nobg_inf['Protocol'].head(200).values, 3)
+inf_byte_codes = attributeEncoding(df_scen10_nobg_inf['Bytes'].values, 6)
+inf_prot_codes = attributeEncoding(df_scen10_nobg_inf['Protocol'].values, 3)
 inf_combined = np.add(inf_byte_codes, inf_prot_codes)
 
-print('combined', inf_combined)
-
-
-norm_byte_codes = attributeEncoding(df_scen10_nobg_norm['Bytes'].head(200).values, 6)
-norm_prot_codes = attributeEncoding(df_scen10_nobg_norm['Protocol'].head(200).values, 3)
+norm_byte_codes = attributeEncoding(df_scen10_nobg_norm['Bytes'].values, 6)
+norm_prot_codes = attributeEncoding(df_scen10_nobg_norm['Protocol'].values, 3)
 norm_combined = np.add(norm_byte_codes, norm_prot_codes)
 
 
@@ -221,7 +215,7 @@ norm_combined = np.add(norm_byte_codes, norm_prot_codes)
 ###############################
 from hmmlearn import hmm
 
-infected_discretized = pd.DataFrame(data = inf_combined, index = df_scen10_nobg_inf.head(200).index)
+infected_discretized = pd.DataFrame(data = inf_combined, index = df_scen10_nobg_inf.index)
 infected_discretized.head()
 #%%
 # Sliding window data
@@ -239,17 +233,12 @@ model_likelyhood = model.score(inf_sliding_window)
 
 
 #%%
-norm_discretized = pd.DataFrame(data = norm_combined, index = df_scen10_nobg_norm.head(200).index)
-norm_sliding_window = norm_discretized.rolling(window=WINDOW_WIDTH, min_periods=1).mean()
-norm_sliding_window.head()
-
-x = model.score(norm_sliding_window)
-# x
-
-
 # Evaluate
 def scoreForIP(ip):
     df_scen10_nobg_ip = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == ip]
+
+    if len(df_scen10_nobg_ip) == 0 :
+        return np.nan
 
     byte_codes = attributeEncoding(df_scen10_nobg_ip['Bytes'].values, 6)
     prot_codes = attributeEncoding(df_scen10_nobg_ip['Protocol'].values, 3)
@@ -259,23 +248,33 @@ def scoreForIP(ip):
 
     return model.score(sliding)
 
-inf_likelyhoods = []
+
+#%%
+
+
+TP, FP, TN, FN = 0 ,0 ,0 ,0
 for inf in range(1, len(INFECTED_HOSTS)):
-    inf_likelyhoods.append(scoreForIP(inf))
+    score = scoreForIP(INFECTED_HOSTS[inf])
+    if not np.isnan(score):
+        if abs(model_likelyhood-score) > model_likelyhood:
+            FN += 1
+        else:
+            TP += 1
+    else:
+        print('inf nan: {}'.format(inf))
 
-norm_likelyhoods = []
 for norm in NORMAL_HOSTS:
-    norm_likelyhoods.append(scoreForIP(norm))
+    score = scoreForIP(norm)
+    if not np.isnan(score):
+        if abs(model_likelyhood-score) > model_likelyhood:
+            TN += 1
+        else:
+            print(norm, score)
+            FP += 1
+    else:
+        print('norm nan: {}'.format(norm))
 
-
-#TODO diff tussen model_likelyhood en inf/norm likelyhood
-
-
-
-
-
-
-
+print('TP:{}\t FP:{}\nFN:{}\tTN:{}'.format(TP, FP, FN, TN))
 
 
 
@@ -285,9 +284,86 @@ for norm in NORMAL_HOSTS:
 ###############################
 
 
+from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
+from imblearn.over_sampling import SMOTE
+
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.model_selection import cross_val_score, cross_val_predict, cross_validate
+from sklearn.metrics import roc_curve, auc, precision_recall_curve, confusion_matrix, accuracy_score, recall_score, precision_score
+
+def plot_roc(fpr, tpr):
+    roc_auc = auc(fpr, tpr)
+    plt.plot(fpr, tpr, 'b', label = 'AUC = %0.2f' % roc_auc)
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([-0.01, 1.01])
+    plt.ylim([-0.01, 1.01])
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.grid(True)
+    plt.show()
+
+def plot_PRcurve(recall, precision):
+    roc_auc = auc(recall, precision)
+    plt.plot(recall, precision, 'r', label = 'AUC = %0.2f' % roc_auc)
+    plt.legend(loc = 'lower left')
+    plt.ylabel("Precision")
+    plt.xlabel("Recall")
+    plt.xlim([-0.01, 1.01])
+    plt.ylim([-0.01, 1.01])
+    plt.title("Precision-Recall curve")
+    plt.grid(True)
+plt.show()
+
+
+
 #%%
 # Packet level classification
 
+# class imbalance check
+df_botnet = df_scen10_nobg[df_scen10_nobg['Label'] == 'Botnet']
+df_normal = df_scen10_nobg[df_scen10_nobg['Label'] == 'LEGITIMATE']
+
+print('nr of botnet:\t\t{}\nnr of legitimate:\t{}'.format(len(df_botnet), len(df_normal)))
+
+#%%
+
+labels = df_scen10_nobg['Label'].apply(lambda x : 1 if int(x == 'Botnet') else 0)
+features = df_scen10_nobg[['Duration', 'Protocol', 'Flags', 'Packets', 'Bytes', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']]
+features['SrcPort'] = df_scen10_nobg['SrcPort'].astype(int)
+#%%
+skf = StratifiedKFold(n_splits=10, shuffle=True)
+split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
+for train_index, test_index in skf.split(features, labels):
+    split += 1
+    #Select the data for this round
+    X_train, X_test = features.loc[train_index], features.loc[test_index]    
+    y_train, y_test = labels[train_index], labels[test_index]
+    
+
+
+    # Train classifier and predict
+    clf = RandomForestClassifier(n_estimators=20)
+
+    clf.fit(X_train, y_train)
+    predictions = clf.predict(X_test)
+
+    #Sum the confusion matrix values
+    tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
+    print('Split {}/10: \ntn {}\t fp {}\nfn {}\t\t tp {}'.format(split, tn, fp, fn, tp))
+    totalTN += tn
+    totalFP += fp
+    totalFN += fn
+    totalTP += tp
+
+print("--- Total sum confmat ---")
+print('tn {}\t fp {}\nfn {}\t\t tp {}'.format(totalTN, totalFP, totalFN, totalTP))
+
+accuracy = (totalTP + totalTN) / (totalTP + totalTN + totalFN + totalFP)
+precision = totalTP / (totalTP + totalFP)
+recall = totalTP / (totalTP + totalFN)
+
+print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, recall))
 
 
 #%%
