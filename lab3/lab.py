@@ -45,10 +45,9 @@ def loadData(path, nrows = None):
     - 147.32.80.9 This normal host is not so reliable since is a dns server)
     - 147.32.87.11 This normal host is not so reliable since is a matlab server)
     """
-DATAFILE1 = r'data/CTU-13-Scen-10-2.csv'
+DATAFILE = r'data/CTU-13-Scen-10-2.csv'
 
-df_scen10 = loadData(DATAFILE1)
-# df_scen3.head()
+df_scen10 = loadData(DATAFILE)
 
 #%%
 INFECTED_HOSTS = ['147.32.84.165', '147.32.84.191', '147.32.84.192', '147.32.84.193', '147.32.84.204', '147.32.84.205', '147.32.84.206', '147.32.84.207', '147.32.84.208', '147.32.84.209']
@@ -299,6 +298,7 @@ print('TP:{}\t FP:{}\nFN:{}\tTN:{}'.format(TP, FP, FN, TN))
 
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 from imblearn.over_sampling import SMOTE
+from collections import Counter
 
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.model_selection import cross_val_score, cross_val_predict, cross_validate
@@ -355,14 +355,16 @@ def eval_classifier(clf, X_train, X_test, y_train, y_test):
 
 #%%
 # Packet level classification
+df_scen10_nobg = df_scen10[(df_scen10['Label'] != 'Background')]
 
 # class imbalance check
-df_scen10_nobg_host['Label'].value_counts().plot.bar()
+df_scen10_nobg['Label'].value_counts().plot.bar()
 
 #%%
+# Process data
 labels = df_scen10_nobg['Label'].apply(lambda x : 1 if int(x == 'Botnet') else 0)
 features = df_scen10_nobg[['Duration', 'Protocol', 'Flags', 'Packets', 'Bytes', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']]
-toFactorize = ['SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']
+toFactorize = ['Flags', 'Protocol', 'SrcIPAddr', 'SrcPort', 'DstIPAddr', 'DstPort']
 for tf in toFactorize:
     features[tf] = pd.factorize(features[tf])[0]
 
@@ -370,6 +372,8 @@ for tf in toFactorize:
 #%%
 #  basic eval of classifier
 X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.4)
+
+#%%
 eval_classifier(RandomForestClassifier(n_estimators=20), X_train, X_test, y_train, y_test)
 
 
@@ -411,14 +415,11 @@ print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, reca
 
 # To get information on a host level we aggregate by SrcIPAddr, and 
 df_scen10_nobg_host = df_scen10_nobg.groupby(['SrcIPAddr']).agg({'Duration':'mean', 'Protocol':'nunique', 'Flags':'nunique', 'Packets':'mean', 'Bytes':'mean', 'SrcPort':'nunique', 'DstIPAddr':'nunique', 'DstPort':'nunique', 'Label':'unique'})
-df_scen10_nobg_host['MostProtocol'] = df_scen10_nobg.groupby('SrcIPAddr')['Protocol'].apply(lambda x: x.value_counts().index[0])
-# df_scen10_nobg_host['MostSrcPort'] = df_scen10_nobg.groupby('SrcIPAddr')['SrcPort'].apply(lambda x: x.value_counts().index[0])
-# df_scen10_nobg_host['MostDstPort'] = df_scen10_nobg.groupby('SrcIPAddr')['DstPort'].apply(lambda x: x.value_counts().index[0])
+# df_scen10_nobg_host['MostProtocol'] = df_scen10_nobg.groupby('SrcIPAddr')['Protocol'].apply(lambda x: x.value_counts().index[0])
 
-df_scen10_nobg_host['Label_size'] = df_scen10_nobg_host['Label'].apply(lambda x : len(x))
 
-df_scen10_nobg_host = df_scen10_nobg_host[df_scen10_nobg_host['Label_size'] == 1]
-df_scen10_nobg_host['Label'] = df_scen10_nobg_host['Label'].apply(lambda x : x[0])
+df_scen10_nobg_host['Label'] = df_scen10_nobg_host['Label'].apply(lambda x: (x[0] if x.shape == (1,) else 'Botnet'))
+
 
 df_scen10_nobg_host.head()
 
@@ -426,10 +427,56 @@ df_scen10_nobg_host.head()
 # class imbalance check
 df_scen10_nobg_host['Label'].value_counts().plot.bar()
 
+#%%
+#resample features to balance classes
+df_scen10_nobg_host['Label'] = df_scen10_nobg_host['Label'].apply(lambda x : 1 if int(x == 'Botnet') else 0)
+
+labels = df_scen10_nobg_host['Label'].values
+features = df_scen10_nobg_host.drop(['Label'], axis=1)
+
+sm = SMOTE(random_state=42)
+features, labels = sm.fit_resample(features, labels)
+
+print('Legit(0)/Botnet(1)', Counter(labels))
+
 
 #%%
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.4)
+eval_classifier(RandomForestClassifier(n_estimators=20), X_train, X_test, y_train, y_test)
 
+#%%
+skf = StratifiedKFold(n_splits=10, shuffle=True)
+split, totalTN, totalFP, totalFN, totalTP = 0,0,0,0,0
+for train_index, test_index in skf.split(features, labels):
+    split += 1
+    #Select the data for this round
+    X_train = features[train_index,:]
+    X_test = features[test_index,:]
+    y_train = labels[train_index]
+    y_test = labels[test_index]
+    
+    # Train classifier and predict
+    clf = RandomForestClassifier(n_estimators=20)
 
+    clf.fit(X_train, y_train)
+    predictions = clf.predict(X_test)
+
+    #Sum the confusion matrix values
+    tn, fp, fn, tp = confusion_matrix(y_test, predictions.astype(int)).ravel()
+    print('Split {}/10: \ntn {}\t fp {}\nfn {}\t\t tp {}'.format(split, tn, fp, fn, tp))
+    totalTN += tn
+    totalFP += fp
+    totalFN += fn
+    totalTP += tp
+
+print("--- Total sum confmat ---")
+print('tn {}\t fp {}\nfn {}\t\t tp {}'.format(totalTN, totalFP, totalFN, totalTP))
+
+accuracy = (totalTP + totalTN) / (totalTP + totalTN + totalFN + totalFP)
+precision = totalTP / (totalTP + totalFP)
+recall = totalTP / (totalTP + totalFN)
+
+print('accuracy\t{}\nprecision\t{}\nrecall\t{}'.format(accuracy, precision, recall))
 #%%
 # Bonus: Adversarial examples
 ###############################
