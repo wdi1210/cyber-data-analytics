@@ -160,7 +160,20 @@ df_scen10_nobg_norm = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == NORMAL_HOSTS
 #%%
 display('infected', df_scen10_nobg_inf[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
 display('clean', df_scen10_nobg_norm[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
-# TODO Plot these discribes 
+
+plt.scatter(x=list(range(0,20980)),y=df_scen10_nobg_norm['Bytes'], c='red', marker='+')
+plt.scatter(x=list(range(0,19889)),y=df_scen10_nobg_inf['Bytes'], c='blue', marker='.')
+plt.title('Bytes')
+plt.legend(labels=['Normal', 'Infected'])
+plt.savefig('bytes_scatter.png')
+plt.show()
+
+plt.scatter(x=list(range(0,20980)),y=df_scen10_nobg_norm['Protocol'], c='red', marker='+')
+plt.scatter(x=list(range(0,19889)),y=df_scen10_nobg_inf['Protocol'], c='blue', marker='.')
+plt.title('Protocol')
+plt.legend(labels=['Normal', 'Infected'])
+plt.savefig('protocol_scatter.png')
+plt.show()
 
 
 #%%
