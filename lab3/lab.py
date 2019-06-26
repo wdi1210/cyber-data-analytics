@@ -54,7 +54,7 @@ df_scen10 = loadData(DATAFILE1)
 INFECTED_HOSTS = ['147.32.84.165', '147.32.84.191', '147.32.84.192', '147.32.84.193', '147.32.84.204', '147.32.84.205', '147.32.84.206', '147.32.84.207', '147.32.84.208', '147.32.84.209']
 
 NORMAL_HOSTS = ['147.32.84.170', '147.32.84.134', '147.32.84.164', '147.32.87.36', '147.32.80.9', '147.32.87.11']
-df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOSTS[0]
+df_scen10_filtered = df_scen10[df_scen10['SrcIPAddr'] == INFECTED_HOSTS[0]]
 display('df_scen10_filtered rows: {}'.format(len(df_scen10_filtered)))
 
 #%%
@@ -160,7 +160,20 @@ df_scen10_nobg_norm = df_scen10_nobg[df_scen10_nobg['SrcIPAddr'] == NORMAL_HOSTS
 #%%
 display('infected', df_scen10_nobg_inf[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
 display('clean', df_scen10_nobg_norm[['Packets', 'Bytes', 'Protocol', 'Flags']].describe())
-# TODO Plot these discribes 
+
+plt.scatter(x=list(range(0,20980)),y=df_scen10_nobg_norm['Bytes'], c='red', marker='+')
+plt.scatter(x=list(range(0,19889)),y=df_scen10_nobg_inf['Bytes'], c='blue', marker='.')
+plt.title('Bytes')
+plt.legend(labels=['Normal', 'Infected'])
+plt.savefig('bytes_scatter.png')
+plt.show()
+
+plt.scatter(x=list(range(0,20980)),y=df_scen10_nobg_norm['Protocol'], c='red', marker='+')
+plt.scatter(x=list(range(0,19889)),y=df_scen10_nobg_inf['Protocol'], c='blue', marker='.')
+plt.title('Protocol')
+plt.legend(labels=['Normal', 'Infected'])
+plt.savefig('protocol_scatter.png')
+plt.show()
 
 
 #%%
